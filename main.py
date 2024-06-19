@@ -1,48 +1,46 @@
 import base64
+import logging
+import sys
 from io import BytesIO
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
+from PIL import Image
 from pydantic import BaseModel
 from rembg import remove
-from starlette.websockets import WebSocket
 
-app = FastAPI()
+app = FastAPI(title="image-generator")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+stream_handler = logging.StreamHandler(sys.stdout)
+log_formatter = logging.Formatter("%(asctime)s [%(processName)s: %(process)d] [%(threadName)s: %(thread)d] [%("
+                                  "levelname)s] %(name)s: %(message)s")
+stream_handler.setFormatter(log_formatter)
+logger.addHandler(stream_handler)
+
+logger.info('API is starting up')
 
 
-class Image(BaseModel):
+class ImageData(BaseModel):
     id: int
     name: str
     bytes: str
 
 
-@app.get("/")
-async def root():
-    return {"Hello": "World"}
-
-
 @app.websocket("/ws/rmbg")
-async def rmbg(websocket: WebSocket):
+async def remove_background(websocket: WebSocket):
     await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_text()
-            image_data = Image.parse_raw(data)
+    while True:
+        data = await websocket.receive_text()
+        image_data = ImageData.parse_raw(data)
 
-            image_bytes = base64.b64decode(image_data.bytes)
-            image = Image.open(BytesIO(image_bytes))
+        image_bytes = base64.b64decode(image_data.bytes)
+        image = Image.open(BytesIO(image_bytes))
 
-            output = remove(image)
+        output = remove(image)
 
-            buffered = BytesIO()
-            output.save(buffered, format="PNG")
-            processed_image_bytes = buffered.getvalue()
+        buffered = BytesIO()
+        output.save(buffered, format="PNG")
+        new_bytes = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-            encoded_bytes = base64.b64encode(processed_image_bytes).decode('utf-8')
+        await websocket.send_text(new_bytes)
 
-            response_data = Image(id=image_data.id, name=image_data.name, bytes=encoded_bytes)
-            await websocket.send_text(response_data.json())
-
-    except Exception as e:
-        await websocket.send_text(f"Error processing image data: {str(e)}")
-    finally:
-        await websocket.close()
