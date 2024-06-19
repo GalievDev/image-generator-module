@@ -26,14 +26,10 @@ class ImageData(BaseModel):
     bytes: str
 
 
-@app.websocket("/ws/rmbg")
-async def remove_background(websocket: WebSocket):
-    await websocket.accept()
-    while True:
-        data = await websocket.receive_text()
-        image_data = ImageData.parse_raw(data)
-
-        image_bytes = base64.b64decode(image_data.bytes)
+@app.post("/rmbg")
+async def remove_background(item: ImageData):
+    try:
+        image_bytes = base64.b64decode(item.bytes)
         image = Image.open(BytesIO(image_bytes))
 
         output = remove(image)
@@ -42,5 +38,9 @@ async def remove_background(websocket: WebSocket):
         output.save(buffered, format="PNG")
         new_bytes = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        await websocket.send_text(new_bytes)
+        response_data = ImageData(id=item.id, name=item.name, bytes=new_bytes)
+
+        return response_data
+    except Exception as e:
+        logger.error(str(e))
 
