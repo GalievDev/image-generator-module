@@ -129,3 +129,11 @@ async def remove_background(item: ImageData):
         return response_data
     except Exception as e:
         logger.error(str(e))
+
+
+@app.get("/")
+async def root():
+    return {
+        "name": "Image Generator API",
+        "description": "API for removing image background and generating images"
+    }
