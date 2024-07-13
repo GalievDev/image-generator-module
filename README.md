@@ -12,14 +12,30 @@ Module for image processing and generating.
 ## Deployed url
 **There are deployed url of [module](http://10.90.136.54:5050/)** 
 
-## Installation
+## Deployement
+Section **for customer**
+
+Firstly you should have to installed python 3.9 on your machine
+
+|OS|Download Away|
+|-|-|
+|Windows|https://www.python.org/|
+|Ubuntu|`sudo apt install python`|
+|Arch Linux|`sudo pacman -S python`|
+
 
 Clone the repository: 
 ```bash
 git clone https://gitlab.pg.innopolis.university/ise25/image-generator-module
 ```
 
-Open and run with command:
+Install requirements:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run application with this command:
 
 ```bash
 uvicorn main:app --host {YOUR_URL} --port {YOUR_PORT}
