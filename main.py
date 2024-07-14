@@ -2,7 +2,7 @@ import base64
 import logging
 import sys
 from io import BytesIO
-from typing import List
+from math import ceil
 
 from fastapi import FastAPI, HTTPException
 from PIL import Image, ImageOps
@@ -38,78 +38,103 @@ class Cloth(BaseModel):
     image: str
 
 
+class Outfit(BaseModel):
+    name: str
+    description: str
+    image: str
+
+
 class ImageData(BaseModel):
     id: int
     name: str
     bytes: str
 
 
-def merge_images(images: List[tuple], spacing: int = 10) -> Image.Image:
-    max_width = max(img.width for _, img in images)
-    max_height = max(img.height for _, img in images)
+CLOTH_TYPE_ORDER = [ClothType.TOP, ClothType.OUTWEAR, ClothType.UNDERWEAR, ClothType.FOOTWEAR,
+                    ClothType.ACCESSORY, ClothType.NONE]
 
-    resized_images = []
-    for cloth_type, img in images:
-        img = ImageOps.fit(img, (max_width, max_height), Image.Resampling.LANCZOS)
-        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-            background = Image.new('RGB', img.size, (255, 255, 255))
-            background.paste(img, mask=img.split()[3])
-            img = background
+
+def merge_images_for_outfit(images: list[tuple[str, Image.Image]], spacing: int = 10) -> Image.Image:
+    max_width = max(image.width for cloth_type, image in images)
+    max_height = max(image.height for cloth_type, image in images)
+    outwear_indexes = set()
+    accessory_indexes = set()
+    for i, (cloth_type, image) in enumerate(images):
+        image = ImageOps.fit(image, (max_width, max_height), Image.Resampling.LANCZOS,)
+        # ratio = (max_width / image.width + max_height / image.height) / 2
+        # image = ImageOps.scale(image, ratio)
+        if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
+            background = Image.new('RGB', (max_width, max_height), (255, 255, 255))
+            background.paste(image, (0, 0), mask=image)
+            image = background
         else:
-            img = img.convert('RGB')
-        resized_images.append((cloth_type, img))
-
-    total_width = max_width * 2 + spacing
-    total_height = max_height * 3 + spacing * 2
-    merged_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
-
-    current_y = 0
-    for i, (cloth_type, img) in enumerate(resized_images):
-        if cloth_type in [ClothType.TOP, ClothType.OUTWEAR]:
-            x_offset = 0 if cloth_type == ClothType.TOP else max_width + spacing
-            merged_image.paste(img, (x_offset, current_y))
-        elif cloth_type in [ClothType.UNDERWEAR, ClothType.ACCESSORY]:
-            x_offset = 0 if cloth_type == ClothType.UNDERWEAR else max_width + spacing
-            merged_image.paste(img, (x_offset, current_y))
-        elif cloth_type == ClothType.FOOTWEAR:
-            merged_image.paste(img, (0, current_y))
-        if (cloth_type == ClothType.FOOTWEAR or i == len(resized_images) - 1 or resized_images[i+1][0] in
-                [ClothType.TOP, ClothType.UNDERWEAR]):
-            current_y += max_height + spacing
-
+            image = image.convert('RGB')
+        images[i] = (cloth_type, image)
+        if cloth_type == ClothType.OUTWEAR:
+            outwear_indexes.add(i)
+        elif cloth_type == ClothType.ACCESSORY:
+            accessory_indexes.add(i)
+    number_of_main_attributes = len(images) - len(outwear_indexes) - len(accessory_indexes)
+    total_width = max_width * (1 + len(outwear_indexes)) + spacing * len(outwear_indexes)
+    total_height = max_height * number_of_main_attributes + (number_of_main_attributes - 1) * spacing
+    if len(outwear_indexes) == 0:
+        accessory_per_row = ceil(len(accessory_indexes) / number_of_main_attributes)
+        total_width += accessory_per_row * (max_width + spacing)
+    else:
+        number_of_accessory_rows = ceil(len(accessory_indexes) / len(outwear_indexes))
+        if number_of_accessory_rows + 1 > number_of_main_attributes:
+            total_height = (number_of_accessory_rows + 1) * max_height + spacing * number_of_accessory_rows
+    merged_image = Image.new("RGB", (total_width * 2, total_height * 2), (255, 255, 255))
+    main_attributes_y_offset = 0
+    outwear_x_offset = spacing + max_width
+    accessory_x_offset = outwear_x_offset
+    accessory_y_offset = 0 if len(outwear_indexes) == 0 else spacing + max_height
+    for i, (cloth_type, image) in enumerate(images):
+        w = image.width
+        h = image.height
+        if i not in accessory_indexes and i not in outwear_indexes:
+            merged_image.paste(image, (0, main_attributes_y_offset))
+            main_attributes_y_offset += h + spacing
+        elif i in outwear_indexes:
+            merged_image.paste(image, (outwear_x_offset, 0))
+            outwear_x_offset += spacing + w
+        elif i in accessory_indexes:
+            merged_image.paste(image, (accessory_x_offset, accessory_y_offset))
+            if accessory_x_offset + spacing + max_width > total_width // 2:
+                accessory_y_offset += spacing + h
+                accessory_x_offset = spacing + w
+            else:
+                accessory_x_offset += spacing + w
     return merged_image
 
 
 @app.post("/generate_outfit/")
-async def generate_outfit(clothes: List[Cloth]):
-    type_order = [ClothType.TOP, ClothType.OUTWEAR, ClothType.UNDERWEAR, ClothType.FOOTWEAR,
-                  ClothType.ACCESSORY, ClothType.NONE]
-
-    clothes.sort(key=lambda x: type_order.index(x.type))
-
+async def generate_outfit(clothes: list[Cloth]):
+    clothes.sort(key=lambda x: CLOTH_TYPE_ORDER.index(x.type))
     images = []
     for cloth in clothes:
         try:
-            image_bytes = base64.b64decode(cloth.image)
-            image = Image.open(BytesIO(image_bytes))
+            image = Image.open(BytesIO(base64.b64decode(cloth.image)))
+            # bbox_image = image.crop(image.getbbox(alpha_only=True))
             images.append((cloth.type, image))
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error decoding image {cloth.name}: {str(e)}")
-
     try:
-        merged_image = merge_images(images)
+        merged_image = merge_images_for_outfit(images)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error merging images: {str(e)}")
-
     merged_image_bytes = BytesIO()
     merged_image.save(merged_image_bytes, format='PNG')
     merged_image_bytes.seek(0)
-
     merged_image_base64 = base64.b64encode(merged_image_bytes.read()).decode('utf-8')
-
     response = ImageData(id=1, name="outfit", bytes=merged_image_base64)
-
     return response
+
+
+@app.post("/generate_capsule/")
+async def generate_capsule(outfits: list[Outfit]):
+    # TODO: Later
+    return
 
 
 @app.post("/rmbg/")
