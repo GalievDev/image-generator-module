@@ -5,7 +5,7 @@ from io import BytesIO
 from typing import List, Tuple
 
 from fastapi import FastAPI, HTTPException
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import BaseModel
 from rembg import remove
 
@@ -116,6 +116,26 @@ def merge_images_for_outfit(images: List[Tuple[str, Image.Image]], spacing: int 
     return merged_image
 
 
+def merge_images_for_capsule(images: list[Image.Image], spacing: int = 10) -> Image.Image:
+    capsule_image_width = capsule_image_height = 0
+    for image in images:
+        capsule_image_height += image.height
+        capsule_image_width += image.width
+    avg_outfit_image_box = (int(capsule_image_width / len(images)), int(capsule_image_height / len(images)))
+    capsule_image = Image.new("RGB", (avg_outfit_image_box[0] * len(images) + spacing * (len(images) - 1),
+                                      avg_outfit_image_box[1]), (255, 255, 255))
+    x_offset = 0
+    real_size = [0, 0]
+    for image in images:
+        factor = min(avg_outfit_image_box[0] / image.width, avg_outfit_image_box[1] / image.height)
+        scaled_image = ImageOps.scale(image, factor)
+        real_size[0] += scaled_image.width
+        real_size[1] = max(real_size[1], scaled_image.height)
+        capsule_image.paste(scaled_image, (x_offset, 0))
+        x_offset += spacing + scaled_image.width
+    return capsule_image.crop((0, 0, real_size[0] + spacing * (len(images) - 1), real_size[1]))
+
+
 @app.post("/generate_outfit/")
 async def generate_outfit(clothes: List[Cloth]):
     clothes.sort(key=lambda x: CLOTH_TYPE_ORDER.index(x.type))
@@ -140,8 +160,22 @@ async def generate_outfit(clothes: List[Cloth]):
 
 @app.post("/generate_capsule/")
 async def generate_capsule(outfits: List[Outfit]):
-    # TODO: Later
-    return
+    images = []
+    for outfit in outfits:
+        try:
+            images.append(Image.open(BytesIO(base64.b64decode(outfit.image))))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Error decoding image: {str(exc)}")
+    try:
+        merged_image = merge_images_for_capsule(images)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error merging images: {str(exc)}")
+    merged_image_bytes = BytesIO()
+    merged_image.save(merged_image_bytes, format='PNG')
+    merged_image_bytes.seek(0)
+    merged_image_base64 = base64.b64encode(merged_image_bytes.read()).decode('utf-8')
+    response = ImageData(id=1, name="capsule", bytes=merged_image_base64)
+    return response
 
 
 @app.post("/rmbg/")
