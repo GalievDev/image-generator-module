@@ -2,11 +2,10 @@ import base64
 import logging
 import sys
 from io import BytesIO
-from math import ceil
-from typing import List
+from typing import List, Tuple
 
 from fastapi import FastAPI, HTTPException
-from PIL import Image, ImageOps
+from PIL import Image
 from pydantic import BaseModel
 from rembg import remove
 
@@ -55,7 +54,7 @@ CLOTH_TYPE_ORDER = [ClothType.TOP, ClothType.OUTWEAR, ClothType.UNDERWEAR, Cloth
                     ClothType.ACCESSORY, ClothType.NONE]
 
 
-def process_images(images: List[tuple]) -> List[Image.Image]:
+def process_images(images: List[Tuple]) -> List[Image.Image]:
     processed_images = []
 
     for cloth_type, img in images:
@@ -73,9 +72,6 @@ def process_images(images: List[tuple]) -> List[Image.Image]:
 
 
 def merge_group(images: List[Image.Image], spacing: int = 10) -> Image.Image:
-    if not images:
-        return None
-
     total_width = max(img.width for img in images)
     total_height = sum(img.height for img in images) + spacing * (len(images) - 1)
     merged_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
@@ -89,7 +85,7 @@ def merge_group(images: List[Image.Image], spacing: int = 10) -> Image.Image:
     return merged_image
 
 
-def merge_images_for_outfit(images: list[tuple[str, Image.Image]], spacing: int = 10) -> Image.Image:
+def merge_images_for_outfit(images: List[Tuple[str, Image.Image]], spacing: int = 10) -> Image.Image:
     processed_images = process_images(images)
 
     top_img = next((img for cloth_type, img in processed_images if cloth_type == ClothType.TOP), None)
@@ -121,7 +117,7 @@ def merge_images_for_outfit(images: list[tuple[str, Image.Image]], spacing: int 
 
 
 @app.post("/generate_outfit/")
-async def generate_outfit(clothes: list[Cloth]):
+async def generate_outfit(clothes: List[Cloth]):
     clothes.sort(key=lambda x: CLOTH_TYPE_ORDER.index(x.type))
     images = []
     for cloth in clothes:
@@ -143,7 +139,7 @@ async def generate_outfit(clothes: list[Cloth]):
 
 
 @app.post("/generate_capsule/")
-async def generate_capsule(outfits: list[Outfit]):
+async def generate_capsule(outfits: List[Outfit]):
     # TODO: Later
     return
 
