@@ -149,7 +149,7 @@ def merge_images_for_capsule(top_list: list[Image.Image], underwear_list: list[I
     main_image, real_width = paste_row(main_image, underwear_list, x_offset, y_offset, real_width)
     y_offset += spacing + item_height
     main_image, real_width = paste_row(main_image, footwear_list, x_offset, y_offset, real_width)
-    return main_image.crop((real_width, fake_height))
+    return main_image.crop((0, 0, real_width, fake_height))
 
 
 @app.post("/generate_outfit/")
