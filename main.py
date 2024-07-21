@@ -73,6 +73,8 @@ def process_images(images: List[Tuple[str, Image.Image]]) -> List[Tuple[str, Ima
 
 
 def merge_group(images: List[Image.Image], spacing: int = 10) -> Image.Image:
+    if len(images) == 0:
+        return Image.new('RGBA', (0, 0), (255, 255, 255))
     total_width = max(img.width for img in images)
     total_height = sum(img.height for img in images) + spacing * (len(images) - 1)
     merged_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
