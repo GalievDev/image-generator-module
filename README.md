@@ -9,9 +9,6 @@ Module for image processing and generating.
 - Image background removing from added cloth
 - Image generation for outfits and clothes
 
-## Deployed url
-**There are deployed url of [module](http://10.90.136.54:5050/)** 
-
 ## Deployement
 Section **for customer**
 
