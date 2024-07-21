@@ -118,24 +118,39 @@ def merge_images_for_outfit(images: List[Tuple[str, Image.Image]], spacing: int 
     return merged_image
 
 
-def merge_images_for_capsule(images: list[Image.Image], spacing: int = 10) -> Image.Image:
-    capsule_image_width = capsule_image_height = 0
-    for image in images:
-        capsule_image_height += image.height
-        capsule_image_width += image.width
-    avg_outfit_image_box = (int(capsule_image_width / len(images)), int(capsule_image_height / len(images)))
-    capsule_image = Image.new("RGB", (avg_outfit_image_box[0] * len(images) + spacing * (len(images) - 1),
-                                      avg_outfit_image_box[1]), (255, 255, 255))
-    x_offset = 0
-    real_size = [0, 0]
-    for image in images:
-        factor = min(avg_outfit_image_box[0] / image.width, avg_outfit_image_box[1] / image.height)
-        scaled_image = ImageOps.scale(image, factor)
-        real_size[0] += scaled_image.width
-        real_size[1] = max(real_size[1], scaled_image.height)
-        capsule_image.paste(scaled_image, (x_offset, 0))
-        x_offset += spacing + scaled_image.width
-    return capsule_image.crop((0, 0, real_size[0] + spacing * (len(images) - 1), real_size[1]))
+def merge_images_for_capsule(top_list: list[Image.Image], underwear_list: list[Image.Image],
+                             footwear_list: list[Image.Image], outwear_list: list[Image.Image],
+                             accessory_list: list[Image.Image], spacing: int = 10) -> Image.Image:
+    def paste_row(main_image: Image.Image, images: list[Image.Image], x_offset: int, y_offset: int,
+                  real_width: int) -> (Image.Image, int):
+        for image in images:
+            main_image.paste(image, (x_offset + int((item_width - image.width) / 2),
+                                     y_offset + int((item_height - image.height) / 2)))
+            real_width = real_width + spacing + item_width if x_offset >= real_width else real_width
+            x_offset += spacing + item_width
+        return main_image, real_width
+
+    item_width = item_height = 0
+    for image in top_list + underwear_list + footwear_list + outwear_list + accessory_list:
+        item_width = max(item_height, image.width)
+        item_height = max(item_height, image.height)
+    max_items_in_row = max(len(top_list) + len(outwear_list), len(accessory_list), len(underwear_list),
+                           len(footwear_list))
+    max_items_in_col = ((1 if len(top_list) + len(outwear_list) > 0 else 0) + (1 if len(underwear_list) > 0 else 0)
+                        + (1 if len(accessory_list) > 0 else 0) + (1 if len(footwear_list) > 0 else 0))
+    fake_width = max_items_in_row * item_width + (max_items_in_row - 1) * spacing
+    fake_height = max_items_in_col * item_height + (max_items_in_col - 1) * spacing
+    main_image = Image.new("RGB", (fake_width, fake_height), (255, 255, 255))
+    real_width = -spacing
+    x_offset = y_offset = 0
+    main_image, real_width = paste_row(main_image, top_list + outwear_list, x_offset, y_offset, real_width)
+    y_offset += spacing + item_height
+    main_image, real_width = paste_row(main_image, accessory_list, x_offset, y_offset, real_width)
+    y_offset += spacing + item_height
+    main_image, real_width = paste_row(main_image, underwear_list, x_offset, y_offset, real_width)
+    y_offset += spacing + item_height
+    main_image, real_width = paste_row(main_image, footwear_list, x_offset, y_offset, real_width)
+    return main_image.crop((real_width, fake_height))
 
 
 @app.post("/generate_outfit/")
@@ -161,15 +176,31 @@ async def generate_outfit(clothes: List[Cloth]):
 
 
 @app.post("/generate_capsule/")
-async def generate_capsule(outfits: List[Outfit]):
-    images = []
-    for outfit in outfits:
+async def generate_capsule(clothes: list[Cloth]):
+    tops = []
+    underwears = []
+    footwears = []
+    accessories = []
+    outwears = []
+    for cloth in clothes:
         try:
-            images.append(Image.open(BytesIO(base64.b64decode(outfit.image))))
+            image = Image.open(BytesIO(base64.b64decode(cloth.image)))
+            image = image.crop(image.getbbox())
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Error decoding image: {str(exc)}")
+            raise HTTPException(status_code=400, detail=f"Error decoding image {cloth.name}: {str(exc)}")
+        if cloth.type == ClothType.TOP:
+            tops.append(image)
+        elif cloth.type == ClothType.UNDERWEAR:
+            underwears.append(image)
+        elif cloth.type == ClothType.FOOTWEAR:
+            footwears.append(image)
+        elif cloth.type == ClothType.OUTWEAR:
+            outwears.append(image)
+        elif cloth.type == ClothType.ACCESSORY:
+            accessories.append(image)
     try:
-        merged_image = merge_images_for_capsule(images)
+        merged_image = merge_images_for_capsule(top_list=tops, underwear_list=underwears, footwear_list=footwears,
+                                                outwear_list=outwears, accessory_list=accessories)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error merging images: {str(exc)}")
     merged_image_bytes = BytesIO()
