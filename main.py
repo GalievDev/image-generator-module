@@ -87,6 +87,8 @@ def merge_group(images: List[Image.Image], spacing: int = 10) -> Image.Image:
 
 
 def merge_group_in_row(images: List[Image.Image], spacing: int = 10) -> Image.Image:
+    if len(images) == 0:
+        return Image.new("RGB", (0, 0))
     total_width = sum(img.width for img in images) + spacing * (len(images) - 1)
     total_height = max(img.height for img in images)
     merged_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
