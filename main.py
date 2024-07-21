@@ -39,10 +39,11 @@ class Cloth(BaseModel):
 
 
 class Outfit(BaseModel):
+    id: int
     name: str
     description: str
-    image: str
-    clothes: list[Cloth]
+    image: int
+    clothes: List[int]
 
 
 class ImageData(BaseModel):
