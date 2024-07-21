@@ -23,7 +23,7 @@ Firstly you should have to installed python 3.9 on your machine
 
 Clone the repository: 
 ```bash
-git clone https://gitlab.pg.innopolis.university/ise25/image-generator-module
+git clone https://github.com/GalievDev/image-generator-module
 ```
 
 Install requirements:
