@@ -38,15 +38,7 @@ class Cloth(BaseModel):
     image: str
 
 
-class Outfit(BaseModel):
-    id: int
-    name: str
-    description: str
-    image: int
-
-
 class ImageData(BaseModel):
-    id: int
     name: str
     bytes: str
 
@@ -63,7 +55,7 @@ def process_images(images: List[Tuple[str, Image.Image]]) -> List[Tuple[str, Ima
         img_cropped = img.crop(bbox)
         if img_cropped.mode in ('RGBA', 'LA') or (img_cropped.mode == 'P' and 'transparency' in img_cropped.info):
             background = Image.new('RGB', img_cropped.size, (255, 255, 255))
-            background.paste(img_cropped, mask=img_cropped.split()[3])  # 3 - это альфа-канал
+            background.paste(img_cropped, mask=img_cropped.split()[3])
             img_cropped = background
         else:
             img_cropped = img_cropped.convert('RGB')
@@ -230,7 +222,7 @@ async def remove_background(item: ImageData):
         output.save(buffered, format="PNG")
         new_bytes = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-        response_data = ImageData(id=item.id, name=item.name, bytes=new_bytes)
+        response_data = ImageData(name=item.name, bytes=new_bytes)
 
         return response_data
     except Exception as e:
