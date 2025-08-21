@@ -49,31 +49,52 @@ CLOTH_TYPE_ORDER = [ClothType.TOP, ClothType.OUTWEAR, ClothType.UNDERWEAR, Cloth
 
 def process_images(images: List[Tuple[str, Image.Image]]) -> List[Tuple[str, Image.Image]]:
     processed_images = []
+    target_size = (1920, 1920)
+
 
     for cloth_type, img in images:
+        # Crop transparent/empty borders
         bbox = img.getbbox()
-        img_cropped = img.crop(bbox)
-        if img_cropped.mode in ('RGBA', 'LA') or (img_cropped.mode == 'P' and 'transparency' in img_cropped.info):
-            background = Image.new('RGB', img_cropped.size, (255, 255, 255))
-            background.paste(img_cropped, mask=img_cropped.split()[3])
-            img_cropped = background
-        else:
-            img_cropped = img_cropped.convert('RGB')
-        processed_images.append((cloth_type, img_cropped))
+        if bbox:
+            img = img.crop(bbox)
 
+        # Convert mode
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            img = img.convert('RGBA')
+        else:
+            img = img.convert('RGB')
+
+        # Compute upscale factor so the **largest side = 1920**
+        scale = target_size[0] / max(img.width, img.height)
+        new_size = (int(img.width * scale), int(img.height * scale))
+
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        # Create white background and center the image
+        background = Image.new('RGB', target_size, (255, 255, 255))
+        offset = ((target_size[0] - img.width) // 2, (target_size[1] - img.height) // 2)
+
+        if img.mode == 'RGBA':
+            background.paste(img, offset, mask=img.split()[3])
+        else:
+            background.paste(img, offset)
+
+        processed_images.append((cloth_type, background))
     return processed_images
 
 
 def merge_group(images: List[Image.Image], spacing: int = 10) -> Image.Image:
-    if len(images) == 0:
-        return Image.new('RGBA', (0, 0), (255, 255, 255))
-    total_width = max(img.width for img in images)
+    if not images:
+        return Image.new('RGB', (0, 0), (255, 255, 255))
+
+    max_width = max(img.width for img in images)
     total_height = sum(img.height for img in images) + spacing * (len(images) - 1)
-    merged_image = Image.new('RGB', (total_width, total_height), (255, 255, 255))
+
+    merged_image = Image.new('RGB', (max_width, total_height), (255, 255, 255))
 
     current_y = 0
     for img in images:
-        x_offset = (total_width - img.width) // 2
+        x_offset = (max_width - img.width) // 2
         merged_image.paste(img, (x_offset, current_y))
         current_y += img.height + spacing
 
